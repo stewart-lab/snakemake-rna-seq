@@ -10,7 +10,7 @@ def main():
     p.add_argument("--versions-dir", required=True,
                    help="directory of per-env version files (key=value lines)")
     p.add_argument("--exclude", default="",
-                   help="exclude CSV (sample, stage, reason); may be empty")
+                   help="exclude CSV (sample, reason); may be empty")
     p.add_argument("--min-count", required=True)
     p.add_argument("--min-samples", required=True)
     p.add_argument("--fasta", required=True)

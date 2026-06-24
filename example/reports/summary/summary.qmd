@@ -1,0 +1,67 @@
+---
+title: "RNA-seq pipeline — example report"
+author: "snakemake-rna-seq"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+jupyter: python3
+---
+
+This is a minimal example of a user-supplied [Quarto](https://quarto.org) report.
+The pipeline renders every `*.qmd` it finds under the configured `reports_dir`
+**last**, after all other steps finish, so a report can read any pipeline output.
+
+Copy this folder, rename it (the folder and the `.qmd` must share a name, e.g.
+`my_report/my_report.qmd`), and edit the cells below to summarise your own
+results. The rendered HTML lands at
+`<results_dir>/reports/<name>/<name>.html`.
+
+## A self-contained figure
+
+The cell below has no external dependencies, so this report always renders even
+before the pipeline has produced any results.
+
+```{python}
+import plotly.express as px
+
+fig = px.bar(
+    x=["fastp", "FastQC", "RSEM/STAR", "DESeq2", "GSVA", "GSEA"],
+    y=[1, 2, 3, 4, 5, 6],
+    labels={"x": "pipeline step", "y": "example value"},
+    title="Replace me with a plot of your own results",
+)
+fig.update_layout(template="plotly_white", showlegend=False)
+fig
+```
+
+## Reading a real pipeline output
+
+Uncomment and adjust the cell below to load one of the DESeq2 contrast tables and
+show the top differentially expressed genes. Paths are relative to the directory
+this `.qmd` lives in, so adjust the number of `../` to reach your `results_dir`
+(here it points back up to the project root, then into `results/`).
+
+```{python}
+from pathlib import Path
+import pandas as pd
+
+# Edit this to point at one of your contrasts, e.g.
+# results/013_deseq2_gene_symbols/<treatment>_vs_<control>.csv
+contrast_csv = Path("../../../results/013_deseq2_gene_symbols")
+
+if contrast_csv.is_dir():
+    csvs = sorted(contrast_csv.glob("*.csv"))
+    if csvs:
+        df = pd.read_csv(csvs[0])
+        print(f"Top genes from {csvs[0].name}:")
+        display(df.head(10))
+    else:
+        print(f"No result CSVs found yet in {contrast_csv}.")
+else:
+    print(
+        "Results not found — run the pipeline first, then re-render. "
+        f"(looked in {contrast_csv})"
+    )
+```

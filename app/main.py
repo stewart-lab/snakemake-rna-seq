@@ -32,6 +32,9 @@ def main():
     if not os.path.exists(workflow_dir):
         os.makedirs(workflow_dir)
 
+    # Stage the workflow next to the user's config: copy envs/rules/scripts from
+    # the container into the project's workflow dir, replacing any file whose
+    # contents differ (checksum mismatch) and leaving unchanged files in place.
     subdirs = ['envs', 'rules', 'scripts']
     for subdir in subdirs:
         src_subdir = os.path.join("/app/workflow", subdir)
@@ -53,7 +56,7 @@ def main():
             shutil.copy2(src_path, dst_path)
 
 
-    # remove existing workflow/envs, workflow/rules, workflow/scripts, and workflow/Snakemake
+    # always refresh the Snakefile from the container
     if os.path.exists(os.path.join(workflow_dir, "Snakefile")):
         os.remove(os.path.join(workflow_dir, "Snakefile"))
     
