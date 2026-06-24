@@ -98,7 +98,7 @@ def get_r2(wildcards):
     return samples_df.loc[wildcards.sample, "r2"]
 
 def all_excluded():
-    """All samples listed in the exclude table (any stage), de-duplicated."""
+    """All samples listed in the exclude table, de-duplicated."""
     return EXCLUDE["sample"].dropna().astype(str).drop_duplicates().tolist()
 
 rule all:

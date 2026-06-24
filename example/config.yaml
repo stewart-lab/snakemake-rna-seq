@@ -22,7 +22,7 @@ contrasts: example/contrasts.csv
 gene_sets: example/gene_sets.csv
 
 # Optional: samples to drop before differential expression (e.g. PCA outliers).
-# Columns: sample, stage, reason. Remove this key to disable.
+# Columns: sample, reason. Remove this key to disable.
 exclude: example/exclude.csv
 
 # Reports dir: a directory of user-supplied Quarto reports to render last,

@@ -12,25 +12,78 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 
 | Step | Output folder | Tool | Description |
 |------|---------------|------|-------------|
-| 1 | `001_fastqc` | FastQC | QC of the raw reads |
-| 2 | `002_fastp_trimmed` | fastp | Adapter/quality trimming |
-| 3 | `003_fastqc` | FastQC | QC of the trimmed reads |
+| 1 | `001_fastp_trimmed` | fastp | Adapter/quality trimming + polyX removal |
+| 2 | `002_fastqc` | FastQC | QC of the trimmed reads |
 | – | `<genome_dir>/star_reference` | RSEM + STAR | Build the alignment/quantification index |
 | – | `<genome_dir>/picard_reference` | Picard | Build the sequence dictionary, refFlat, and rRNA intervals |
-| 4 | `004_rsem` | RSEM + STAR | Align and quantify gene-level expression |
-| 5 | `005_reports` | Picard + RSEM/STAR | Per-sample QC "report card" (mapping %, reads, genes detected, rRNA, exonic, intergenic, 5'/3' bias) |
-| 6 | `006_multiqc` | MultiQC | Aggregate fastp/FastQC/RSEM/Picard QC into one report |
-| 7 | `007_raw_counts` | tximport | Assemble the per-sample results into a count matrix |
-| 8 | `008_raw_counts_samples_dropped` | pandas | Drop excluded samples (see `exclude.csv`) |
-| 9 | `009_raw_counts_filtered` | pandas | Low-count gene filter (all-samples **and** dropped matrices) |
-| 10 | `010_pca` | DESeq2/Plotly | VST → PCA + sample clustermap, all samples |
-| 11 | `011_pca_samples_dropped` | DESeq2/Plotly | VST → PCA + sample clustermap, samples dropped |
-| 12 | `012_deseq2` | DESeq2 | Differential expression per contrast |
-| 13 | `013_deseq2_gene_symbols` | gffutils | Map gene IDs → gene names using the GTF |
-| 14 | `014_gsva` | GSVA + limma | Per-sample gene-set scores + differential enrichment |
-| 15 | `015_gsea` | fgsea | Ranked-list gene-set enrichment per contrast |
-| 16 | `016_prose` | – | Auto-generated methods paragraph + tool versions |
+| 3 | `003_rsem` | RSEM + STAR | Align and quantify gene-level expression |
+| 4 | `004_qc_reports` | Picard + RSEM/STAR | Per-sample QC "report card" (mapping %, reads, genes detected, rRNA, exonic, intergenic, 5'/3' bias) |
+| 5 | `005_multiqc` | MultiQC | Aggregate fastp/FastQC/RSEM/Picard QC into one report |
+| 6 | `006_raw_counts` | tximport | Assemble the per-sample results into a count matrix |
+| 7 | `007_raw_counts_samples_dropped` | pandas | Drop excluded samples (see `exclude.csv`) |
+| 8 | `008_raw_counts_filtered` | pandas | Low-count gene filter (all-samples **and** dropped matrices) |
+| 9 | `009_pca` | DESeq2/Plotly | VST → PCA + sample clustermap, all samples |
+| 10 | `010_pca_samples_dropped` | DESeq2/Plotly | VST → PCA + sample clustermap, samples dropped |
+| 11 | `011_deseq2` | DESeq2 | Differential expression per contrast |
+| 12 | `012_deseq2_gene_symbols` | gffutils | Map gene IDs → gene names using the GTF |
+| 13 | `013_gsva` | GSVA + limma | Per-sample gene-set scores + differential enrichment |
+| 14 | `014_gsea` | fgsea | Ranked-list gene-set enrichment per contrast |
+| 15 | `015_prose` | – | Auto-generated methods paragraph + tool versions |
 | – | `reports` | Quarto | Render any user-supplied `.qmd` reports |
+
+## Running
+
+The pipeline is packaged as a Docker image. `app/main.py` stages the workflow
+next to your config (it creates a sibling `workflow/` directory containing the
+`Snakefile`, `envs/`, `rules/`, and `scripts/`) and invokes Snakemake with
+`--use-conda`.
+
+```bash
+# Mount a working directory that contains your config + inputs (and your
+# reference directory), then point main.py at the config file.
+# Tip: give the mounted directory the same path it has on your filesystem, so
+# the paths in your config stay valid for collaborators.
+docker run --rm \
+  -v /w5home/myname/mystuff:/w5home/myname/mystuff \
+  snakemake-rna-seq \
+  python main.py \
+  /w5home/myname/mystuff/myproject/config/config.yaml
+```
+
+Snakemake creates and caches each step's conda environment on first run, then
+builds the targets defined in `rule all`. Re-running only rebuilds what changed.
+
+### Suggested project directory structure
+
+`main.py` treats the **parent of the config file's directory** as the project
+root and stages `workflow/` there. A tidy layout that keeps inputs, config, and
+outputs separate looks like this:
+
+```text
+myproject/
+├── config/                # the run configuration + sample/design sheets
+│   ├── config.yaml         #   ← pass THIS path to main.py
+│   ├── samples.csv
+│   ├── design.csv
+│   ├── contrasts.csv
+│   ├── gene_sets.csv
+│   └── exclude.csv
+├── resources/             # all inputs the pipeline reads
+│   ├── reads/              #   raw FASTQs referenced by samples.csv
+│   ├── reference/          #   genome_dir: exactly one FASTA + one GTF
+│   │                       #   (the star_reference/ and picard_reference/
+│   │                       #    indexes are built in here on first run)
+│   └── gene_sets/          #   .gmt files referenced by gene_sets.csv
+├── reports/               # reports_dir: your Quarto reports, one folder each
+│   └── summary/summary.qmd
+├── workflow/              # auto-staged by main.py (Snakefile + envs/rules/scripts)
+├── results/              # results_dir: all pipeline outputs
+└── logs/                 # logs_dir: per-rule logs
+```
+
+You are free to name and arrange these however you like — the pipeline only
+cares about the paths you set in `config.yaml`. **Absolute paths are
+recommended** (see below), since the example above is just a convention.
 
 ## Inputs
 
@@ -53,7 +106,7 @@ All inputs are referenced from a single config file (see
 | `cores` | Number of CPU cores for the pipeline (RSEM/STAR threads, etc.) |
 | `results_dir` / `logs_dir` | Output locations |
 
-Paths may be absolute or relative to the directory the pipeline runs in. 
+Paths may be absolute or relative to the directory the pipeline runs in.
 Absolute paths are recommended so your colleagues can find the data
 if you send them your config files.
 
@@ -106,8 +159,8 @@ sample must exist in the sample sheet. The `reason` is
 included in the methods paragraph.
 
 ```csv
-sample,stage,reason
-KO_rep3,cluster,clustered away from the other KO replicates on the sample PCA
+sample,reason
+KO_rep3,it had a low number of reads
 ```
 
 ### Reference (`genome_dir`)
@@ -127,46 +180,28 @@ expected one level down, i.e. `<reports_dir>/<name>/<name>.qmd`. They are
 rendered **last**, after the rest of the pipeline finishes (so a report can read
 any pipeline output), and the rendered HTML lands under
 `<results_dir>/reports/<name>/<name>.html`. This step is skipped entirely if
-`reports_dir` is omitted from the config or contains no `.qmd` files.
-
-## Running
-
-The pipeline is packaged as a Docker image; `app/main.py` stages the workflow
-next to your config and invokes Snakemake with `--use-conda`.
-
-```bash
-# Run: mount a working directory that contains your config + inputs, and your
-# reference directory, then point main.py at the config.
-# it is recommended to give the mounted directory's name the same name as it
-# is on your filesystem, for reproducibility.
-docker run --rm \
-  -v /w5home/myname/mystuff:/w5home/myname/mystuff \
-  snakemake-rna-seq \
-  python main.py \
-  /w5home/myname/mystuff/myproject/config.yaml
-```
-
-Snakemake creates and caches each step's conda environment on first run, then
-builds the targets defined in `rule all`. Re-running only rebuilds what changed.
+`reports_dir` is omitted from the config or contains no `.qmd` files. A minimal
+starter report is in
+[`example/reports/summary/summary.qmd`](example/reports/summary/summary.qmd).
 
 ## Outputs
 
 Everything lands under `results_dir` (per-step folders in the table above);
 per-rule logs under `logs_dir`. Key results:
 
-- `012_deseq2/<contrast>.csv` — differential expression (DESeq2)
-- `013_deseq2_gene_symbols/<contrast>.csv` — the same, with gene symbols
-- `014_gsva/<contrast>.csv` and `gsva_scores.csv` — GSVA enrichment
-- `015_gsea/<contrast>.csv` — GSEA (fgsea) enrichment
-- `010_pca/` and `011_pca_samples_dropped/` — interactive PCA (HTML/PNG) + clustermaps
-- `005_reports/report_cards.txt` — per-sample text QC report cards
-- `006_multiqc/multiqc_report.html` — aggregated QC
-- `016_prose/methods.md` — auto-generated methods paragraph + references
+- `011_deseq2/<contrast>.csv` — differential expression (DESeq2)
+- `012_deseq2_gene_symbols/<contrast>.csv` — the same, with gene symbols
+- `013_gsva/<contrast>.csv` and `gsva_scores.csv` — GSVA enrichment
+- `014_gsea/<contrast>.csv` — GSEA (fgsea) enrichment
+- `009_pca/` and `010_pca_samples_dropped/` — interactive PCA (HTML/PNG) + clustermaps
+- `004_qc_reports/report_cards.txt` — per-sample text QC report cards
+- `005_multiqc/multiqc_report.html` — aggregated QC
+- `015_prose/methods.md` — auto-generated methods paragraph + references
 - `reports/<name>/<name>.html` — rendered user-supplied Quarto reports
 
 ## Development
 
-**TODO:** 
+**TODO:**
 
 - Unit tests
 - Support single-end read samples
