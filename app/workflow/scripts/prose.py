@@ -101,7 +101,7 @@ def _fastp():
     return f"Raw reads were preprocessed with fastp (v{version('fastp')}) to trim adapters, filter low-quality reads, and remove polyX tails, with paired-end adapter auto-detection enabled."
 
 def _fastqc():
-    return f"Read quality was assessed before and after trimming with FastQC (v{version('fastqc')})."
+    return f"Read quality was assessed with FastQC (v{version('fastqc')})."
 
 def _alignment_reference(fasta: str, gtf: str):
     fasta = os.path.basename(fasta)

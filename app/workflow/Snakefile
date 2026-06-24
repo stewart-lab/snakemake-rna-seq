@@ -4,12 +4,9 @@ from glob import glob
 import re
 import pandas as pd
 
-configfile: "config.yaml"
-
 # read inputs from config
 RESULTS =             (config["results_dir"] + "/").replace("//", "/")
 LOGS =                (config["logs_dir"] + "/").replace("//", "/")
-# reports_dir is optional: omit it (or leave it blank) to skip Quarto rendering.
 REPORTS_DIR =         (config["reports_dir"] + "/").replace("//", "/") if config.get("reports_dir") else ""
 GENOME_DIR =          (config["genome_dir"] + "/").replace("//", "/")
 SAMPLESHEET_CSV_PATH = config["samples"]
@@ -19,22 +16,21 @@ GENE_SETS_CSV_PATH =   config["gene_sets"]
 CORES =                config["cores"]
 
 # output directories for each step in the pipeline
-STEP_FASTQC_PRE_TRIM_DIR =                RESULTS + "001_fastqc/"
-STEP_FASTP_DIR =                          RESULTS + "002_fastp_trimmed/"
-STEP_FASTQC_POST_TRIM_DIR =               RESULTS + "003_fastqc/"
-STEP_RSEM_DIR =                           RESULTS + "004_rsem/"
-STEP_QC_REPORT_CARDS_DIR =                RESULTS + "005_reports/"
-STEP_MULTIQC_DIR =                        RESULTS + "006_multiqc/"
-STEP_RAW_COUNT_MATRIX_DIR =               RESULTS + "007_raw_counts/"
-STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR =     RESULTS + "008_raw_counts_samples_dropped/"
-STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR = RESULTS + "009_raw_counts_filtered/"
-STEP_PCA_ALL_SAMPLES_DIR =                RESULTS + "010_pca/"
-STEP_PCA_SAMPLES_DROPPED_DIR =            RESULTS + "011_pca_samples_dropped/"
-STEP_DESEQ2_DIR =                         RESULTS + "012_deseq2/"
-STEP_GENE_SYMBOLS_DIR =                   RESULTS + "013_deseq2_gene_symbols/"
-STEP_GSVA_DIR =                           RESULTS + "014_gsva/"
-STEP_GSEA_DIR =                           RESULTS + "015_gsea/"
-STEP_PROSE_DIR =                          RESULTS + "016_prose/"
+STEP_FASTP_DIR =                          RESULTS + "001_fastp_trimmed/"
+STEP_FASTQC_POST_TRIM_DIR =               RESULTS + "002_fastqc/"
+STEP_RSEM_DIR =                           RESULTS + "003_rsem/"
+STEP_QC_REPORT_CARDS_DIR =                RESULTS + "004_reports/"
+STEP_MULTIQC_DIR =                        RESULTS + "005_multiqc/"
+STEP_RAW_COUNT_MATRIX_DIR =               RESULTS + "006_raw_counts/"
+STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR =     RESULTS + "007_raw_counts_samples_dropped/"
+STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR = RESULTS + "008_raw_counts_filtered/"
+STEP_PCA_ALL_SAMPLES_DIR =                RESULTS + "009_pca/"
+STEP_PCA_SAMPLES_DROPPED_DIR =            RESULTS + "010_pca_samples_dropped/"
+STEP_DESEQ2_DIR =                         RESULTS + "011_deseq2/"
+STEP_GENE_SYMBOLS_DIR =                   RESULTS + "012_deseq2_gene_symbols/"
+STEP_GSVA_DIR =                           RESULTS + "013_gsva/"
+STEP_GSEA_DIR =                           RESULTS + "014_gsea/"
+STEP_PROSE_DIR =                          RESULTS + "015_prose/"
 STEP_QUARTO_DIR =                         RESULTS + "reports/"
 
 # directories for built references
@@ -116,58 +112,12 @@ rule all:
         STEP_PROSE_DIR + "methods.md",
         QUARTO_HTML_FILES,
 
-############# Step 1: FastQC of raw reads #############
-
-# stage raw reads with gzipped files + sample names. these files are temporary (removed after fastp runs)
-rule stage_raw_reads:
-    input:
-        r1=get_r1,
-        r2=get_r2,
-    output:
-        r1=temp(STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1.fastq.gz"),
-        r2=temp(STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R2.fastq.gz"),
-    run:
-        import gzip
-        import shutil
-
-        for src, dst in [(input.r1, output.r1), (input.r2, output.r2)]:
-            if src.endswith(".gz"):
-                # Already gzipped: just copy it under the standard name.
-                shutil.copy(src, dst)
-            else:
-                # Plain .fastq: gzip it so the staged copy is always .fastq.gz.
-                with open(src, "rb") as f_in, gzip.open(dst, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-
-# run fastqc
-rule fastqc_raw:
-    input:
-        r1=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1.fastq.gz",
-        r2=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R2.fastq.gz",
-    output:
-        r1_html=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1_fastqc.html",
-        r1_zip=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1_fastqc.zip",
-        r2_html=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R2_fastqc.html",
-        r2_zip=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R2_fastqc.zip",
-    params:
-        outdir=STEP_FASTQC_PRE_TRIM_DIR
-    conda:
-        "envs/fastqc.yml"
-    log:
-        LOGS + Path(STEP_FASTQC_PRE_TRIM_DIR).name + "/{sample}.log"
-    shell:
-        """
-        mkdir -p {params.outdir}
-        fastqc -o {params.outdir} --threads 1 {input.r1} {input.r2} &> {log}
-        """
-
-############# Step 2: Fastp trimming #############
+############# Step 1: Fastp trimming #############
 # trimmed .fastq are temporary and are deleted after RSEM has run
 rule fastp:
     input:
-        r1=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1.fastq.gz",
-        r2=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R2.fastq.gz",
-        r1_html=STEP_FASTQC_PRE_TRIM_DIR + "{sample}_R1_fastqc.html", # not used; only for linear DAG
+        r1=get_r1,
+        r2=get_r2,
     output:
         r1=temp(STEP_FASTP_DIR + "{sample}_R1.fastq"),
         r2=temp(STEP_FASTP_DIR + "{sample}_R2.fastq"),
@@ -192,7 +142,7 @@ rule fastp:
             &> {log}
         """
 
-############# Step 3: FastQC of trimmed reads #############
+############# Step 2: FastQC of trimmed reads #############
 rule fastqc_trimmed:
     input:
         r1=STEP_FASTP_DIR + "{sample}_R1.fastq",
@@ -214,7 +164,7 @@ rule fastqc_trimmed:
         fastqc -o {params.outdir} --threads 1 {input.r1} {input.r2} &> {log}
         """
 
-############# Step 4: RSEM expression quantification #############
+############# Step 3: RSEM expression quantification #############
 
 # Build RSEM reference
 rule rsem_prepare_reference:
@@ -294,7 +244,7 @@ rule rsem_calculate_expression:
         rm -f {params.out_prefix}.STAR.genome.bam
         """
 
-############# Step 5: per-sample QC report card (RSEM/STAR + Picard) #############
+############# Step 4: per-sample QC report card (RSEM/STAR + Picard) #############
 
 # Build all Picard reference files
 rule picard_reference:
@@ -392,7 +342,7 @@ rule qc_report_card:
     shell:
         "cat {input} > {output}"
 
-############# Step 6: Generate MultiQC report #############
+############# Step 5: Generate MultiQC report #############
 rule multiqc:
     input:
         fastqc=expand(
@@ -436,7 +386,7 @@ rule multiqc:
             &> {log}
         """
 
-############# Step 7: Build raw count matrix #############
+############# Step 6: Build raw count matrix #############
 rule tximport:
     input:
         genes=expand(STEP_RSEM_DIR + "{sample}.genes.results", sample=SAMPLES),
@@ -450,7 +400,7 @@ rule tximport:
     shell:
         "Rscript scripts/tximport.R --files \"{input.genes}\" --out {output}"
 
-############# Step 8: Drop excluded samples #############
+############# Step 7: Drop excluded samples #############
 rule drop_samples:
     input:
         counts=STEP_RAW_COUNT_MATRIX_DIR + "counts.csv",
@@ -471,7 +421,7 @@ rule drop_samples:
         df.to_csv(output.counts)
         design.to_csv(output.design)
 
-############# Step 9: Remove low-count genes #############
+############# Step 8: Remove low-count genes #############
 # Applies the same min-count/min-samples gene filter to both the original
 # (all-samples) count matrix and the samples-dropped count matrix.
 rule filter_counts:
@@ -507,7 +457,7 @@ rule filter_counts:
         pd.read_csv(input.design_dropped, index_col=0).to_csv(output.design_dropped)
         shutil.copy(input.contrasts, output.contrasts)
 
-############# Step 10: VSN + PCA + clustermap, all samples #############
+############# Step 9: VSN + PCA + clustermap, all samples #############
 rule pca_clustermap_all:
     input:
         counts=STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR + "counts_all_samples.csv",
@@ -547,7 +497,7 @@ rule pca_clustermap_all:
             >> {log} 2>&1
         """
 
-############# Step 11: VSN + PCA + clustermap, samples dropped #############
+############# Step 10: VSN + PCA + clustermap, samples dropped #############
 rule pca_clustermap_dropped:
     input:
         counts=STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR + "counts_samples_dropped.csv",
@@ -588,7 +538,7 @@ rule pca_clustermap_dropped:
             >> {log} 2>&1
         """
 
-############# Step 12: Differential expression analysis with DESeq2 #############
+############# Step 11: Differential expression analysis with DESeq2 #############
 rule deseq2:
     input:
         counts=STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR + "counts_samples_dropped.csv",
@@ -615,7 +565,7 @@ rule deseq2:
             &> {log}
         """
 
-############# Step 13: Map gene IDs to gene symbols #############
+############# Step 12: Map gene IDs to gene symbols #############
 
 # Parse the gene_name attributes from the GTF using gffutils instead of 
 # relying on a species-specific annotation package (like org.hs.eg.db).
@@ -651,7 +601,7 @@ rule gene_symbols:
             &> {log}
         """
 
-############# Step 14: GSVA + limma #############
+############# Step 13: GSVA + limma #############
 rule gsva_limma:
     input:
         expr=STEP_GENE_SYMBOLS_DIR + "normalized_counts.csv",
@@ -679,7 +629,7 @@ rule gsva_limma:
             &> {log}
         """
 
-############# Step 15: GSEA #############
+############# Step 14: GSEA #############
 rule gsea:
     input:
         deseq=STEP_GENE_SYMBOLS_DIR + "{contrast}.csv",
@@ -701,7 +651,7 @@ rule gsea:
             &> {log}
         """
 
-############# Step 16: Auto-generate the methods paragraph #############
+############# Step 15: Auto-generate the methods paragraph #############
 
 # Capture tool versions
 rule versions_fastp:
@@ -813,7 +763,7 @@ rule prose:
             &> {log}
         """
 
-############# Step 17: Exploratory plots (heatmaps, volcano, etc.) #############
+############# Step 16: Exploratory plots (heatmaps, volcano, etc.) #############
 
 
 
