@@ -2,8 +2,7 @@
 
 A [Snakemake](https://snakemake.github.io/) pipeline for bulk paired-end RNA-seq:
 from raw FASTQs to differential expression, gene-set enrichment, QC reports, and
-an auto-generated methods paragraph. Each step runs in its own pinned conda
-environment.
+an auto-generated methods paragraph. Each step runs in its own conda environment.
 
 ## What it does
 
@@ -33,52 +32,51 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 
 ## Running
 
-The pipeline is packaged as a Docker image. `app/main.py` stages the workflow
-next to your config (it creates a sibling `workflow/` directory containing the
-`Snakefile`, `envs/`, `rules/`, and `scripts/`) and invokes Snakemake with
-`--use-conda`.
+The pipeline is packaged as a Docker image. Running the container will 1) create the workflow directory
+next to your config directory, 2) copy the script and environment files, and then 3) run the Snakemake pipeline.
 
 ```bash
 # Mount a working directory that contains your config + inputs (and your
-# reference directory), then point main.py at the config file.
+# genome reference directory), then pass your config YAML to main.py in the container.
+
 # Tip: give the mounted directory the same path it has on your filesystem, so
-# the paths in your config stay valid for collaborators.
+# the paths in your config files are findable when viewing logs, etc.
+
 docker run --rm \
-  -v /w5home/myname/mystuff:/w5home/myname/mystuff \
-  snakemake-rna-seq \
+  -v /w5home/myname/projects:/w5home/myname/projects \
+  snakemake-rna-seq:1.0.0 \
   python main.py \
-  /w5home/myname/mystuff/myproject/config/config.yaml
+  /w5home/myname/projects/myproject/config/config.yaml
 ```
 
-Snakemake creates and caches each step's conda environment on first run, then
-builds the targets defined in `rule all`. Re-running only rebuilds what changed.
+Snakemake will create each step's conda environment on first run.
 
 ### Suggested project directory structure
 
-`main.py` treats the **parent of the config file's directory** as the project
-root and stages `workflow/` there. A tidy layout that keeps inputs, config, and
+The Docker container treats the **parent of the config file's directory** as the project
+root and creates `workflow/` there. A tidy layout that keeps inputs, config, and
 outputs separate looks like this:
 
 ```text
 myproject/
-├── config/                # the run configuration + sample/design sheets
+├── config/                 # the run configuration + sample/design sheets
 │   ├── config.yaml         #   ← pass THIS path to main.py
 │   ├── samples.csv
 │   ├── design.csv
 │   ├── contrasts.csv
 │   ├── gene_sets.csv
 │   └── exclude.csv
-├── resources/             # all inputs the pipeline reads
+├── resources/              # all inputs the pipeline reads
 │   ├── reads/              #   raw FASTQs referenced by samples.csv
 │   ├── reference/          #   genome_dir: exactly one FASTA + one GTF
 │   │                       #   (the star_reference/ and picard_reference/
-│   │                       #    indexes are built in here on first run)
+│   │                       #   indexes are built in here on first run)
 │   └── gene_sets/          #   .gmt files referenced by gene_sets.csv
-├── reports/               # reports_dir: your Quarto reports, one folder each
+├── reports/                # reports_dir: your Quarto reports, one folder each
 │   └── summary/summary.qmd
-├── workflow/              # auto-staged by main.py (Snakefile + envs/rules/scripts)
-├── results/              # results_dir: all pipeline outputs
-└── logs/                 # logs_dir: per-rule logs
+├── workflow/               # created by the Docker container (Snakefile + envs/rules/scripts)
+├── results/                # results_dir: all pipeline outputs
+└── logs/                   # logs_dir: per-rule logs
 ```
 
 You are free to name and arrange these however you like — the pipeline only
@@ -87,9 +85,9 @@ recommended** (see below), since the example above is just a convention.
 
 ## Inputs
 
-All inputs are referenced from a single config file (see
-[`example/config.yaml`](example/config.yaml)). The CSV examples below live in
-[`example/`](example/) and can be used as templates.
+All inputs specified in the config YAML file (see
+[`example/config.yaml`](example/config.yaml)). There are also example CSV files in the 
+[`example/`](example/) directory.
 
 ### `config.yaml`
 
@@ -99,12 +97,13 @@ All inputs are referenced from a single config file (see
 | `design` | Path to the design CSV |
 | `contrasts` | Path to the contrasts CSV |
 | `gene_sets` | Path to the gene-sets CSV (lists GMT files) |
-| `exclude` | Path to the exclusions CSV (optional; remove the key to disable) |
-| `reports_dir` | Directory of user-supplied Quarto `.qmd` reports to render (optional; omit to skip — see [Reports](#reports--quarto-optional)) |
+| `exclude` | Path to the exclusions CSV (optional) |
+| `reports_dir` | Directory of user-supplied Quarto `.qmd` reports to render (optional; see [Reports](#reports--quarto-optional)) |
 | `genome_dir` | Directory holding exactly one FASTA and one GTF |
 | `filter.min_count` / `filter.min_samples` | Low-count gene filter thresholds |
-| `cores` | Number of CPU cores for the pipeline (RSEM/STAR threads, etc.) |
-| `results_dir` / `logs_dir` | Output locations |
+| `cores` | Number of CPU cores for the pipeline |
+| `results_dir` | Output of each step |
+| `logs_dir` | Logs for each step |
 
 Paths may be absolute or relative to the directory the pipeline runs in.
 Absolute paths are recommended so your colleagues can find the data
@@ -178,26 +177,11 @@ tied to any single organism.
 Point `reports_dir` at a directory of your own Quarto reports. Each `.qmd` is
 expected one level down, i.e. `<reports_dir>/<name>/<name>.qmd`. They are
 rendered **last**, after the rest of the pipeline finishes (so a report can read
-any pipeline output), and the rendered HTML lands under
+any pipeline output), and the rendered HTML will be under
 `<results_dir>/reports/<name>/<name>.html`. This step is skipped entirely if
 `reports_dir` is omitted from the config or contains no `.qmd` files. A minimal
 starter report is in
 [`example/reports/summary/summary.qmd`](example/reports/summary/summary.qmd).
-
-## Outputs
-
-Everything lands under `results_dir` (per-step folders in the table above);
-per-rule logs under `logs_dir`. Key results:
-
-- `011_deseq2/<contrast>.csv` — differential expression (DESeq2)
-- `012_deseq2_gene_symbols/<contrast>.csv` — the same, with gene symbols
-- `013_gsva/<contrast>.csv` and `gsva_scores.csv` — GSVA enrichment
-- `014_gsea/<contrast>.csv` — GSEA (fgsea) enrichment
-- `009_pca/` and `010_pca_samples_dropped/` — interactive PCA (HTML/PNG) + clustermaps
-- `004_qc_reports/report_cards.txt` — per-sample text QC report cards
-- `005_multiqc/multiqc_report.html` — aggregated QC
-- `015_prose/methods.md` — auto-generated methods paragraph + references
-- `reports/<name>/<name>.html` — rendered user-supplied Quarto reports
 
 ## Development
 
@@ -205,7 +189,7 @@ per-rule logs under `logs_dir`. Key results:
 
 - Unit tests
 - Support single-end read samples
-- Handle paired study design in DESeq2
+- Handle paired study design
 - Add package parameters to prose (e.g., GSVA kcdf, tau)
 - Autogenerate exploratory plots
 - Put all Python code in the Snakemake rules into Python script files for easier unit testing
