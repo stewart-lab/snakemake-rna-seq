@@ -45,6 +45,10 @@ filter:
 # Number of CPU cores to use for the pipeline.
 cores: 8
 
+# Where to stage the generated workflow (Snakefile + envs/rules/scripts).
+# Required. Relative paths are resolved against this config file's directory.
+workflow_dir: /path/to/myproject/workflow
+
 # Output locations (created if missing).
 results_dir: results
 logs_dir: logs

@@ -35,7 +35,8 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 ## Running
 
 The pipeline is packaged as a Docker image. Running the container will 1) create the workflow directory
-next to your config directory, 2) copy the script and environment files, and then 3) run the Snakemake pipeline.
+(set by `workflow_dir` in your config), 2) copy the script and environment files, and then 3) run the
+Snakemake pipeline.
 
 ```bash
 # Mount a working directory that contains your config + inputs (and your
@@ -55,9 +56,9 @@ Snakemake will create each step's conda environment on first run.
 
 ### Suggested project directory structure
 
-The Docker container treats the **parent of the config file's directory** as the project
-root and creates `workflow/` there. A tidy layout that keeps inputs, config, and
-outputs separate looks like this:
+The Docker container stages `workflow/` at the path you set in `workflow_dir`. A tidy
+layout that keeps inputs, config, and outputs separate looks like this (here `workflow_dir`
+points at the `workflow/` directory beside `config/`):
 
 ```text
 myproject/
@@ -76,7 +77,7 @@ myproject/
 │   └── gene_sets/          #   .gmt files referenced by gene_sets.csv
 ├── reports/                # reports_dir: your Quarto reports, one folder each
 │   └── summary/summary.qmd
-├── workflow/               # created by the Docker container (Snakefile + envs/rules/scripts)
+├── workflow/               # workflow_dir: staged by the container (Snakefile + envs/rules/scripts)
 ├── results/                # results_dir: all pipeline outputs
 └── logs/                   # logs_dir: per-rule logs
 ```
@@ -104,6 +105,7 @@ All inputs specified in the config YAML file (see
 | `genome_dir` | Directory holding exactly one FASTA and one GTF |
 | `filter.min_count` / `filter.min_samples` | Low-count gene filter thresholds |
 | `cores` | Number of CPU cores for the pipeline |
+| `workflow_dir` | Where to stage the generated workflow (Snakefile + envs/rules/scripts); relative paths resolve against the config directory |
 | `results_dir` | Output of each step |
 | `logs_dir` | Logs for each step |
 

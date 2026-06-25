@@ -11,8 +11,6 @@ args = parser.parse_args()
 def main():
     config_yaml = args.config_yaml
     config_dir = os.path.dirname(config_yaml)
-    project_dir = os.path.dirname(config_dir)
-    workflow_dir = os.path.join(project_dir, 'workflow')
 
     # check that config_yaml exists
     if not os.path.exists(config_yaml):
@@ -30,12 +28,22 @@ def main():
     cores = config.get("cores", 1)
     results_dir = config.get("results_dir", "")
 
+    # Where to stage the generated workflow. Required in the config; relative
+    # paths are resolved against the config file's directory.
+    workflow_dir = config.get("workflow_dir")
+    if not workflow_dir:
+        print("Error: config must specify 'workflow_dir'")
+        exit(1)
+    workflow_dir = os.path.expanduser(workflow_dir)
+    if not os.path.isabs(workflow_dir):
+        workflow_dir = os.path.join(config_dir, workflow_dir)
+
     if not os.path.exists(workflow_dir):
         os.makedirs(workflow_dir)
 
-    # Stage the workflow next to the user's config: copy envs/rules/scripts from
-    # the container into the project's workflow dir, replacing any file whose
-    # contents differ (checksum mismatch) and leaving unchanged files in place.
+    # Stage the workflow into workflow_dir: copy envs/rules/scripts from the
+    # container, replacing any file whose contents differ (checksum mismatch)
+    # and leaving unchanged files in place.
     subdirs = ['envs', 'rules', 'scripts']
     for subdir in subdirs:
         src_subdir = os.path.join("/app/workflow", subdir)

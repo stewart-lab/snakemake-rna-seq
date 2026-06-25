@@ -83,7 +83,7 @@ GTF = _get_reference_file(GENOME_DIR, (".gtf",), "GTF (.gtf)")
 # Conda envs whose tools report a version for the methods paragraph. Each gets a
 # `versions_<env>` rule that runs the tool's own --version inside that env.
 VERSION_ENVS = [
-    "fastp", "fastqc", "multiqc", "rsem", "star", "tximport",
+    "fastp", "fastqc", "multiqc", "rsem", "star", "picard", "tximport",
     "deseq2", "gsva", "limma", "fgsea"
 ]
 
@@ -400,6 +400,7 @@ rule tximport_build_count_matrix:
 ############# Step 7: Drop excluded samples #############
 rule drop_samples:
     input:
+        script="scripts/drop_samples.py",
         counts=STEP_RAW_COUNT_MATRIX_DIR + "counts.csv",
         design=DESIGN_CSV_PATH,
     output:
@@ -409,20 +410,23 @@ rule drop_samples:
         drop=all_excluded(),
     log:
         LOGS + Path(STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR).name + "/drop.log"
-    run:
-        import pandas as pd
-        df = pd.read_csv(input.counts, index_col="feature_id")
-        design = pd.read_csv(input.design, index_col=0)
-        df = df.drop(columns=params.drop, errors="raise")
-        design = design.drop(index=params.drop, errors="raise")
-        df.to_csv(output.counts)
-        design.to_csv(output.design)
+    shell:
+        """
+        python {input.script} \
+            --counts {input.counts} \
+            --design {input.design} \
+            --out-counts {output.counts} \
+            --out-design {output.design} \
+            --drop {params.drop} \
+            &> {log}
+        """
 
 ############# Step 8: Remove low-count genes #############
 # Applies the same min-count/min-samples gene filter to both the original
 # (all-samples) count matrix and the samples-dropped count matrix.
 rule filter_low_count_genes:
     input:
+        script="scripts/filter_low_count_genes.py",
         counts_all=STEP_RAW_COUNT_MATRIX_DIR + "counts.csv",
         design_all=DESIGN_CSV_PATH,
         counts_dropped=STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR + "counts.csv",
@@ -439,20 +443,23 @@ rule filter_low_count_genes:
         min_samples=config["filter"]["min_samples"],
     log:
         LOGS + Path(STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR).name + "/filter.log"
-    run:
-        import pandas as pd, shutil
-
-        def filter_genes(counts_path, out_path):
-            df = pd.read_csv(counts_path, index_col="feature_id")
-            keep = (df >= params.min_count).sum(axis=1) >= params.min_samples
-            df[keep].to_csv(out_path)
-
-        filter_genes(input.counts_all, output.counts_all)
-        filter_genes(input.counts_dropped, output.counts_dropped)
-
-        pd.read_csv(input.design_all, index_col=0).to_csv(output.design_all)
-        pd.read_csv(input.design_dropped, index_col=0).to_csv(output.design_dropped)
-        shutil.copy(input.contrasts, output.contrasts)
+    shell:
+        """
+        python {input.script} \
+            --counts-all {input.counts_all} \
+            --counts-dropped {input.counts_dropped} \
+            --design-all {input.design_all} \
+            --design-dropped {input.design_dropped} \
+            --contrasts {input.contrasts} \
+            --out-counts-all {output.counts_all} \
+            --out-counts-dropped {output.counts_dropped} \
+            --out-design-all {output.design_all} \
+            --out-design-dropped {output.design_dropped} \
+            --out-contrasts {output.contrasts} \
+            --min-count {params.min_count} \
+            --min-samples {params.min_samples} \
+            &> {log}
+        """
 
 ############# Step 9: VSN + PCA + clustermap, all samples #############
 rule pca_clustermap_all_samples:
@@ -705,6 +712,17 @@ rule versions_rsem:
         """
         rsem-calculate-expression --version > {output.rsem} 2>> {log}
         STAR --version >> {output.star} 2>> {log}
+        """
+
+rule versions_picard:
+    input: scores=STEP_GSVA_DIR + "gsva_scores.csv", # not used; only for linear DAG
+    output: STEP_PROSE_DIR + "versions/picard.txt"
+    conda: "envs/qc_report.yml"
+    shell:
+        """
+        # Picard prints its version to stderr and exits non-zero, so swallow the
+        # exit code (as with fastp) to keep snakemake from flagging a failure.
+        picard CollectRnaSeqMetrics --version > {output} 2>&1 || true
         """
 
 rule versions_tximport:
