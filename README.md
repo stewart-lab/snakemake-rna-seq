@@ -17,22 +17,22 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 | 0 | `000_dag` | graphviz | PNG visualization of the DAG |
 | 1 | `001_fastp_trimmed` | fastp | Adapter/quality trimming + polyX removal |
 | 2 | `002_fastqc` | FastQC | QC of the trimmed reads |
-| – | `strandedness` | RSeQC | Infer per-sample library strandedness (subsample STAR align → `infer_experiment.py`); feeds RSEM + Picard |
 | – | `<genome_dir>/star_reference` | RSEM + STAR | Build the alignment/quantification index |
 | – | `<genome_dir>/picard_reference` | Picard | Build the sequence dictionary, refFlat, and rRNA intervals |
-| 3 | `003_rsem` | RSEM + STAR | Align and quantify gene-level expression |
-| 4 | `004_qc_reports` | Picard + RSEM/STAR | Per-sample QC "report card" (mapping %, reads, genes detected, rRNA, exonic, intergenic, 5'/3' bias) |
-| 5 | `005_multiqc` | MultiQC | Aggregate fastp/FastQC/RSEM/Picard QC into one report |
-| 6 | `006_raw_counts` | tximport | Assemble the per-sample results into a count matrix |
-| 7 | `007_raw_counts_samples_dropped` | pandas | Drop excluded samples (see `exclude.csv`) |
-| 8 | `008_raw_counts_filtered` | pandas | Low-count gene filter (all-samples **and** dropped matrices) |
-| 9 | `009_pca` | DESeq2/Plotly | VST → PCA + sample clustermap, all samples |
-| 10 | `010_pca_samples_dropped` | DESeq2/Plotly | VST → PCA + sample clustermap, samples dropped |
-| 11 | `011_deseq2` | DESeq2 | Differential expression per contrast |
-| 12 | `012_deseq2_gene_symbols` | gffutils | Map gene IDs → gene names using the GTF |
-| 13 | `013_gsva` | GSVA + limma | Per-sample gene-set scores + differential enrichment |
-| 14 | `014_gsea` | fgsea | Ranked-list gene-set enrichment per contrast |
-| 15 | `015_prose` | – | Auto-generated methods paragraph + tool versions |
+| 3 | `003_strandedness` | RSeQC | Per-sample library strandedness — taken from `samples.csv` where given, else inferred (subsample STAR align → `infer_experiment.py`); writes a populated `samples.csv` and feeds RSEM + Picard |
+| 4 | `004_rsem` | RSEM + STAR | Align and quantify gene-level expression |
+| 5 | `005_qc_reports` | Picard + RSEM/STAR | Per-sample QC "report card" (mapping %, reads, genes detected, rRNA, exonic, intergenic, 5'/3' bias) |
+| 6 | `006_multiqc` | MultiQC | Aggregate fastp/FastQC/RSeQC/RSEM/Picard QC into one report |
+| 7 | `007_raw_counts` | tximport | Assemble the per-sample results into a count matrix |
+| 8 | `008_raw_counts_samples_dropped` | pandas | Drop excluded samples (see `exclude.csv`) |
+| 9 | `009_raw_counts_filtered` | pandas | Low-count gene filter (all-samples **and** dropped matrices) |
+| 10 | `010_pca` | DESeq2/Plotly | VST → PCA + sample clustermap, all samples |
+| 11 | `011_pca_samples_dropped` | DESeq2/Plotly | VST → PCA + sample clustermap, samples dropped |
+| 12 | `012_deseq2` | DESeq2 | Differential expression per contrast |
+| 13 | `013_deseq2_gene_symbols` | gffutils | Map gene IDs → gene names using the GTF |
+| 14 | `014_gsva` | GSVA + limma | Per-sample gene-set scores + differential enrichment |
+| 15 | `015_gsea` | fgsea | Ranked-list gene-set enrichment per contrast |
+| 16 | `016_prose` | – | Auto-generated methods paragraph + tool versions |
 | – | `reports` | Quarto | Render any user-supplied `.qmd` reports |
 
 ## Running
@@ -120,6 +120,22 @@ One row per sample. FASTQs may be `.fastq` or `.fastq.gz`.
 sample,r1,r2
 WT_rep1,../reads/WT_rep1_R1.fastq.gz,../reads/WT_rep1_R2.fastq.gz
 KO_rep1,../reads/KO_rep1_R1.fastq.gz,../reads/KO_rep1_R2.fastq.gz
+```
+
+An optional `strandedness` column lets you set a sample's library strandedness
+explicitly; valid values are `forward`, `reverse`, and `unstranded` (`none` is
+accepted as an alias for `unstranded`). Any sample left blank — or the whole
+column omitted — has its strandedness **inferred** with RSeQC
+`infer_experiment.py` (step 3), which aligns a subsample of the reads and reads
+out the orientation. The strandedness (given or inferred) is passed to RSEM
+(`--strandedness`) and Picard (`STRAND_SPECIFICITY`), and a copy of the sample
+sheet with the column fully populated is written to
+`results/003_strandedness/samples.csv`.
+
+```csv
+sample,r1,r2,strandedness
+WT_rep1,../reads/WT_rep1_R1.fastq.gz,../reads/WT_rep1_R2.fastq.gz,reverse
+KO_rep1,../reads/KO_rep1_R1.fastq.gz,../reads/KO_rep1_R2.fastq.gz,
 ```
 
 ### Design — [`example/design.csv`](example/design.csv)

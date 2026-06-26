@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 import os
 import sys
 from glob import glob
@@ -43,20 +44,20 @@ print("\n\n", file=sys.stderr)
 # output directories for each step in the pipeline
 STEP_FASTP_DIR =                          RESULTS + "001_fastp_trimmed/"
 STEP_FASTQC_POST_TRIM_DIR =               RESULTS + "002_fastqc/"
-STEP_STRANDEDNESS_DIR =                   RESULTS + "strandedness/"
-STEP_RSEM_DIR =                           RESULTS + "003_rsem/"
-STEP_QC_REPORT_CARDS_DIR =                RESULTS + "004_qc_reports/"
-STEP_MULTIQC_DIR =                        RESULTS + "005_multiqc/"
-STEP_RAW_COUNT_MATRIX_DIR =               RESULTS + "006_raw_counts/"
-STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR =     RESULTS + "007_raw_counts_samples_dropped/"
-STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR = RESULTS + "008_raw_counts_filtered/"
-STEP_PCA_ALL_SAMPLES_DIR =                RESULTS + "009_pca/"
-STEP_PCA_SAMPLES_DROPPED_DIR =            RESULTS + "010_pca_samples_dropped/"
-STEP_DESEQ2_DIR =                         RESULTS + "011_deseq2/"
-STEP_GENE_SYMBOLS_DIR =                   RESULTS + "012_deseq2_gene_symbols/"
-STEP_GSVA_DIR =                           RESULTS + "013_gsva/"
-STEP_GSEA_DIR =                           RESULTS + "014_gsea/"
-STEP_PROSE_DIR =                          RESULTS + "015_prose/"
+STEP_STRANDEDNESS_DIR =                   RESULTS + "003_strandedness/"
+STEP_RSEM_DIR =                           RESULTS + "004_rsem/"
+STEP_QC_REPORT_CARDS_DIR =                RESULTS + "005_qc_reports/"
+STEP_MULTIQC_DIR =                        RESULTS + "006_multiqc/"
+STEP_RAW_COUNT_MATRIX_DIR =               RESULTS + "007_raw_counts/"
+STEP_RAW_COUNTS_SAMPLES_DROPPED_DIR =     RESULTS + "008_raw_counts_samples_dropped/"
+STEP_RAW_COUNTS_LOW_COUNTS_FILTERED_DIR = RESULTS + "009_raw_counts_filtered/"
+STEP_PCA_ALL_SAMPLES_DIR =                RESULTS + "010_pca/"
+STEP_PCA_SAMPLES_DROPPED_DIR =            RESULTS + "011_pca_samples_dropped/"
+STEP_DESEQ2_DIR =                         RESULTS + "012_deseq2/"
+STEP_GENE_SYMBOLS_DIR =                   RESULTS + "013_deseq2_gene_symbols/"
+STEP_GSVA_DIR =                           RESULTS + "014_gsva/"
+STEP_GSEA_DIR =                           RESULTS + "015_gsea/"
+STEP_PROSE_DIR =                          RESULTS + "016_prose/"
 STEP_QUARTO_DIR =                         RESULTS + "reports/"
 
 # directories for built references
@@ -123,12 +124,68 @@ def get_r1(wildcards):
 def get_r2(wildcards):
     return os.path.normpath(os.path.join(CONFIG_DIR, samples_df.loc[wildcards.sample, "r2"]))
 
+# Canonical strandedness values accepted in the (optional) samples.csv
+# "strandedness" column. "none" is accepted as an alias for "unstranded".
+STRANDEDNESS_VALUES = {"forward", "reverse", "unstranded"}
+
+def get_strandedness(wildcards):
+    """User-specified strandedness for a sample from the optional samples.csv
+    'strandedness' column, normalized to forward/reverse/unstranded. Returns ""
+    when the column is absent or the cell is blank, meaning the strandedness is
+    to be inferred with RSeQC. Parallels get_r1/get_r2."""
+    if "strandedness" not in samples_df.columns:
+        return ""
+    value = samples_df.loc[wildcards.sample, "strandedness"]
+    if pd.isna(value):
+        return ""
+    value = str(value).strip().lower()
+    if not value:
+        return ""
+    if value == "none":
+        value = "unstranded"
+    if value not in STRANDEDNESS_VALUES:
+        raise ValueError(
+            f"Invalid strandedness '{value}' for sample '{wildcards.sample}' in "
+            f"{SAMPLESHEET_CSV_PATH}; expected one of "
+            f"{sorted(STRANDEDNESS_VALUES)} or 'none', or leave blank to infer."
+        )
+    return value
+
+def _strandedness_of(sample):
+    """get_strandedness for a bare sample name (not a wildcards object)."""
+    return get_strandedness(SimpleNamespace(sample=sample))
+
+def get_strand_call_file(wildcards):
+    """The inferred-strandedness call file for a sample, or [] when the sample's
+    strandedness is given explicitly (so no inference / alignment is needed)."""
+    if _strandedness_of(wildcards.sample):
+        return []
+    return STEP_STRANDEDNESS_DIR + f"{wildcards.sample}.strandedness.txt"
+
+def get_inferred_call_files(wildcards=None):
+    """Call files for every sample whose strandedness is inferred."""
+    return [
+        STEP_STRANDEDNESS_DIR + f"{sample}.strandedness.txt"
+        for sample in SAMPLES
+        if not _strandedness_of(sample)
+    ]
+
+def get_inferred_report_files(wildcards=None):
+    """infer_experiment.py reports for every sample whose strandedness is
+    inferred (for MultiQC; samples with an explicit strandedness have none)."""
+    return [
+        STEP_STRANDEDNESS_DIR + f"{sample}.infer_experiment.txt"
+        for sample in SAMPLES
+        if not _strandedness_of(sample)
+    ]
+
 def get_excluded_samples():
     """All samples listed in the exclude table, de-duplicated."""
     return EXCLUDE["sample"].dropna().astype(str).drop_duplicates().tolist()
 
 rule all:
     input:
+        STEP_STRANDEDNESS_DIR + "samples.csv",
         STEP_PROSE_DIR + "methods.md",
         QUARTO_HTML_FILES,
 
@@ -188,13 +245,15 @@ rule fastqc:
         fastqc -o {params.outdir} --threads {threads} {input.r1} {input.r2} &> {log}
         """
 
-############# Strandedness inference (RSeQC) #############
-# The library strandedness is inferred per sample and passed to RSEM
-# (--strandedness) and Picard (STRAND_SPECIFICITY). Because RSEM aligns and
-# quantifies in one step, its BAM can't be reused to set its own strandedness;
-# instead a subsample of the trimmed reads is aligned with STAR against the
-# already-built index, and RSeQC infer_experiment.py calls the strandedness
-# from that small BAM.
+############# Step 3: Strandedness inference (RSeQC) #############
+# Each sample's library strandedness is passed to RSEM (--strandedness) and
+# Picard (STRAND_SPECIFICITY). A sample's strandedness can be set explicitly in
+# the optional samples.csv "strandedness" column; any sample left blank is
+# inferred here. Because RSEM aligns and quantifies in one step, its BAM can't
+# be reused to set its own strandedness; instead a subsample of the trimmed
+# reads is aligned with STAR against the already-built index, and RSeQC
+# infer_experiment.py calls the strandedness from that small BAM. The resolved
+# strandedness for every sample is written back out to a populated samples.csv.
 
 # Gene-model BED12 that infer_experiment.py compares read orientations against.
 rule rseqc_reference_bed:
@@ -260,7 +319,8 @@ rule strand_subsample_align:
         rm -rf {params.prefix}_STARtmp
         """
 
-# Call strandedness from the subsample BAM and write RSEM/Picard settings.
+# Call strandedness from the subsample BAM. Writes the inferred call
+# (forward/reverse/unstranded) as a single line to {sample}.strandedness.txt.
 rule infer_strandedness:
     input:
         script="scripts/strandedness.py",
@@ -287,7 +347,29 @@ rule infer_strandedness:
             >> {log} 2>&1
         """
 
-############# Step 3: RSEM expression quantification #############
+# Write a copy of the samples.csv with the "strandedness" column fully populated:
+# explicit values are passed through, blank ones are filled with the inferred call.
+rule write_strandedness_samplesheet:
+    input:
+        script="scripts/write_strandedness_samplesheet.py",
+        samples=SAMPLESHEET_CSV_PATH,
+        calls=get_inferred_call_files,
+    output:
+        STEP_STRANDEDNESS_DIR + "samples.csv",
+    params:
+        strand_dir=STEP_STRANDEDNESS_DIR,
+    log:
+        LOGS + Path(STEP_STRANDEDNESS_DIR).name + "/samplesheet.log"
+    shell:
+        """
+        python {input.script} \
+            --samples {input.samples} \
+            --strand-dir {params.strand_dir} \
+            --out {output} \
+            &> {log}
+        """
+
+############# Step 4: RSEM expression quantification #############
 
 # Build RSEM reference
 rule rsem_prepare_reference:
@@ -330,7 +412,7 @@ rule rsem_calculate_expression:
         r2=STEP_FASTP_DIR + "{sample}_R2.fastq",
         grp=STEP_RSEM_REFERENCE_DIR + "star_reference.grp",
         sa_index=STEP_RSEM_REFERENCE_DIR + "SAindex",
-        strand=STEP_STRANDEDNESS_DIR + "{sample}.strandedness.txt",
+        strand_call=get_strand_call_file,
     output:
         genes=STEP_RSEM_DIR + "{sample}.genes.results",
         isoforms=STEP_RSEM_DIR + "{sample}.isoforms.results",
@@ -340,6 +422,7 @@ rule rsem_calculate_expression:
         ref_prefix=STEP_RSEM_REFERENCE_DIR + "star_reference",
         out_prefix=STEP_RSEM_DIR + "{sample}",
         outdir=STEP_RSEM_DIR,
+        strandedness=get_strandedness,
     threads:
         CORES
     conda:
@@ -351,8 +434,16 @@ rule rsem_calculate_expression:
         # check CPU architecture. STAR only works on avx2.
         bash scripts/check_star_cpu.sh &> {log}
 
-        # inferred library strandedness (sets $RSEM_STRANDEDNESS)
-        source {input.strand}
+        # Use the explicit strandedness from samples.csv if given, otherwise the
+        # inferred call. Then translate to RSEM's --strandedness option.
+        STRANDEDNESS="{params.strandedness}"
+        if [ -z "$STRANDEDNESS" ]; then STRANDEDNESS=$(cat {input.strand_call}); fi
+        case "$STRANDEDNESS" in
+            forward)    RSEM_STRANDEDNESS=forward;;
+            reverse)    RSEM_STRANDEDNESS=reverse;;
+            unstranded) RSEM_STRANDEDNESS=none;;
+            *) echo "unexpected strandedness '$STRANDEDNESS'" >&2; exit 1;;
+        esac
 
         mkdir -p {params.outdir}
         rsem-calculate-expression \
@@ -374,7 +465,7 @@ rule rsem_calculate_expression:
         rm -f {params.out_prefix}.STAR.genome.bam
         """
 
-############# Step 4: per-sample QC report card (RSEM/STAR + Picard) #############
+############# Step 5: per-sample QC report card (RSEM/STAR + Picard) #############
 
 # Build all Picard reference files
 rule picard_prepare_reference:
@@ -415,17 +506,27 @@ rule picard_rna_metrics:
         bam=STEP_RSEM_DIR + "{sample}.genome.sorted.bam",
         refflat=STEP_PICARD_REFERENCE_DIR + "refFlat.txt",
         rrna=STEP_PICARD_REFERENCE_DIR + "rRNA.interval_list",
-        strand=STEP_STRANDEDNESS_DIR + "{sample}.strandedness.txt",
+        strand_call=get_strand_call_file,
     output:
         rnaseq_metrics=STEP_QC_REPORT_CARDS_DIR + "picard/{sample}.rnaseq_metrics.txt",
+    params:
+        strandedness=get_strandedness,
     conda:
         "envs/qc_report.yml"
     log:
         LOGS + Path(STEP_QC_REPORT_CARDS_DIR).name + "/{sample}.picard_metrics.log"
     shell:
         """
-        # inferred library strandedness (sets $PICARD_STRAND)
-        source {input.strand}
+        # Use the explicit strandedness from samples.csv if given, otherwise the
+        # inferred call. Then translate to Picard's STRAND_SPECIFICITY.
+        STRANDEDNESS="{params.strandedness}"
+        if [ -z "$STRANDEDNESS" ]; then STRANDEDNESS=$(cat {input.strand_call}); fi
+        case "$STRANDEDNESS" in
+            forward)    PICARD_STRAND=SECOND_READ_TRANSCRIPTION_STRAND;;
+            reverse)    PICARD_STRAND=FIRST_READ_TRANSCRIPTION_STRAND;;
+            unstranded) PICARD_STRAND=NONE;;
+            *) echo "unexpected strandedness '$STRANDEDNESS'" >&2; exit 1;;
+        esac
 
         picard CollectRnaSeqMetrics \
             I={input.bam} \
@@ -478,7 +579,7 @@ rule aggregate_qc_report_cards:
     shell:
         "cat {input} > {output}"
 
-############# Step 5: Generate MultiQC report #############
+############# Step 6: Generate MultiQC report #############
 rule multiqc:
     input:
         fastqc=expand(
@@ -497,10 +598,7 @@ rule multiqc:
             STEP_QC_REPORT_CARDS_DIR + "picard/{sample}.rnaseq_metrics.txt",
             sample=SAMPLES,
         ),
-        rseqc=expand(
-            STEP_STRANDEDNESS_DIR + "{sample}.infer_experiment.txt",
-            sample=SAMPLES,
-        ),
+        rseqc=get_inferred_report_files,
         report_cards=STEP_QC_REPORT_CARDS_DIR + "report_cards.txt", # not used; only for linear DAG
     output:
         html=STEP_MULTIQC_DIR + "multiqc_report.html",
@@ -527,7 +625,7 @@ rule multiqc:
             &> {log}
         """
 
-############# Step 6: Build raw count matrix #############
+############# Step 7: Build raw count matrix #############
 rule tximport_build_count_matrix:
     input:
         script="scripts/tximport.R",
@@ -542,7 +640,7 @@ rule tximport_build_count_matrix:
     shell:
         "Rscript {input.script} --files \"{input.genes}\" --out {output}"
 
-############# Step 7: Drop excluded samples #############
+############# Step 8: Drop excluded samples #############
 rule drop_samples:
     input:
         script="scripts/drop_samples.py",
@@ -566,7 +664,7 @@ rule drop_samples:
             &> {log}
         """
 
-############# Step 8: Remove low-count genes #############
+############# Step 9: Remove low-count genes #############
 # Applies the same min-count/min-samples gene filter to both the original
 # (all-samples) count matrix and the samples-dropped count matrix.
 rule filter_low_count_genes:
@@ -606,7 +704,7 @@ rule filter_low_count_genes:
             &> {log}
         """
 
-############# Step 9: VSN + PCA + clustermap, all samples #############
+############# Step 10: VSN + PCA + clustermap, all samples #############
 rule pca_clustermap_all_samples:
     input:
         vst_script="scripts/vst_matrix.R",
@@ -649,7 +747,7 @@ rule pca_clustermap_all_samples:
             >> {log} 2>&1
         """
 
-############# Step 10: VSN + PCA + clustermap, samples dropped #############
+############# Step 11: VSN + PCA + clustermap, samples dropped #############
 rule pca_clustermap_samples_dropped:
     input:
         vst_script="scripts/vst_matrix.R",
@@ -693,7 +791,7 @@ rule pca_clustermap_samples_dropped:
             >> {log} 2>&1
         """
 
-############# Step 11: Differential expression analysis with DESeq2 #############
+############# Step 12: Differential expression analysis with DESeq2 #############
 rule deseq2_differential_expression:
     input:
         script="scripts/deseq2.R",
@@ -721,7 +819,7 @@ rule deseq2_differential_expression:
             &> {log}
         """
 
-############# Step 12: Map gene IDs to gene symbols #############
+############# Step 13: Map gene IDs to gene symbols #############
 
 # Parse the gene_name attributes from the GTF using gffutils instead of 
 # relying on a species-specific annotation package (like org.hs.eg.db).
@@ -760,7 +858,7 @@ rule map_gene_symbols:
             &> {log}
         """
 
-############# Step 13: GSVA + limma #############
+############# Step 14: GSVA + limma #############
 rule gsva_limma_pathway_analysis:
     input:
         script="scripts/gsva_limma.R",
@@ -789,7 +887,7 @@ rule gsva_limma_pathway_analysis:
             &> {log}
         """
 
-############# Step 14: GSEA #############
+############# Step 15: GSEA #############
 rule gsea_pathway_analysis:
     input:
         script="scripts/gsea.R",
@@ -811,7 +909,7 @@ rule gsea_pathway_analysis:
             &> {log}
         """
 
-############# Step 15: Auto-generate the methods paragraph #############
+############# Step 16: Auto-generate the methods paragraph #############
 
 # Capture tool versions
 rule versions_fastp:
@@ -953,7 +1051,7 @@ rule prose:
             &> {log}
         """
 
-############# Step 16: Exploratory plots (heatmaps, volcano, etc.) #############
+############# Step 17: Exploratory plots (heatmaps, volcano, etc.) #############
 
 
 

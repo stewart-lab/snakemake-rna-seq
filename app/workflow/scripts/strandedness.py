@@ -2,26 +2,21 @@
 """Turn RSeQC `infer_experiment.py` output into a strandedness call.
 
 `infer_experiment.py` reports, for a subsample of aligned reads, the fraction
-explained by each read-orientation pattern. This script reads that report,
-decides whether the library is forward-stranded, reverse-stranded, or
-unstranded, and writes a small shell-sourceable file with the matching RSEM and
-Picard settings so the RSEM and Picard rules can just `source` it.
+explained by each read-orientation pattern. This script reads that report and
+writes the inferred call -- one of forward / reverse / unstranded -- as a single
+line. The RSEM and Picard rules read that word (or the explicit value from the
+samples.csv strandedness column) and translate it to their own option.
 
 Orientation patterns (from infer_experiment.py):
   paired-end  forward:  "1++,1--,2+-,2-+"   reverse:  "1+-,1-+,2++,2--"
   single-end  forward:  "++,--"             reverse:  "+-,-+"
 
 "forward" means the read (or read 1) is on the same strand as the transcript
-(fr-secondstrand / ISF). "reverse" is the dUTP/Illumina-stranded case
-(fr-firststrand / ISR), which is the most common stranded protocol.
-
-Mapping applied:
-  forward    -> RSEM --strandedness forward (--forward-prob 1),
-                Picard STRAND_SPECIFICITY=SECOND_READ_TRANSCRIPTION_STRAND
-  reverse    -> RSEM --strandedness reverse (--forward-prob 0),
-                Picard STRAND_SPECIFICITY=FIRST_READ_TRANSCRIPTION_STRAND
-  unstranded -> RSEM --strandedness none    (--forward-prob 0.5),
-                Picard STRAND_SPECIFICITY=NONE
+(fr-secondstrand / ISF); RSEM --strandedness forward, Picard
+SECOND_READ_TRANSCRIPTION_STRAND. "reverse" is the dUTP/Illumina-stranded case
+(fr-firststrand / ISR), the most common stranded protocol; RSEM --strandedness
+reverse, Picard FIRST_READ_TRANSCRIPTION_STRAND. "unstranded" maps to RSEM
+--strandedness none and Picard NONE.
 """
 import argparse
 import os
@@ -37,14 +32,6 @@ REVERSE_PATTERNS = (
     r'"1\+-,1-\+,2\+\+,2--":\s*([0-9.]+)',  # paired-end
     r'"\+-,-\+":\s*([0-9.]+)',              # single-end
 )
-
-# strandedness call -> (rsem --strandedness, rsem --forward-prob, Picard STRAND_SPECIFICITY)
-SETTINGS = {
-    "forward":    ("forward", "1",   "SECOND_READ_TRANSCRIPTION_STRAND"),
-    "reverse":    ("reverse", "0",   "FIRST_READ_TRANSCRIPTION_STRAND"),
-    "unstranded": ("none",    "0.5", "NONE"),
-}
-
 
 def _first_fraction(text, patterns):
     """First trailing fraction matched by any of `patterns`, or None."""
@@ -84,7 +71,8 @@ def main():
                     help="min fraction of explained reads in one orientation to "
                          "call the library stranded (default: 0.8)")
     ap.add_argument("--out", required=True,
-                    help="output shell-sourceable strandedness file")
+                    help="output file; the inferred call (forward/reverse/"
+                         "unstranded) is written as a single line")
     args = ap.parse_args()
 
     with open(args.infer_experiment) as fh:
@@ -99,25 +87,14 @@ def main():
         )
 
     call, forward_frac = call_strandedness(forward, reverse, args.threshold)
-    rsem_strandedness, rsem_forward_prob, picard_strand = SETTINGS[call]
-
-    undetermined = max(0.0, 1.0 - (forward or 0.0) - (reverse or 0.0))
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as fh:
-        fh.write(f"STRANDEDNESS={call}\n")
-        fh.write(f"RSEM_STRANDEDNESS={rsem_strandedness}\n")
-        fh.write(f"RSEM_FORWARD_PROB={rsem_forward_prob}\n")
-        fh.write(f"PICARD_STRAND={picard_strand}\n")
-        fh.write(f"FORWARD_FRACTION={forward or 0.0:.4f}\n")
-        fh.write(f"REVERSE_FRACTION={reverse or 0.0:.4f}\n")
-        fh.write(f"UNDETERMINED_FRACTION={undetermined:.4f}\n")
+        fh.write(call + "\n")
 
     print(f"[strandedness] call={call} "
           f"(forward={forward or 0.0:.4f}, reverse={reverse or 0.0:.4f}, "
-          f"threshold={args.threshold}) -> "
-          f"RSEM --strandedness {rsem_strandedness}, "
-          f"Picard STRAND_SPECIFICITY={picard_strand}")
+          f"threshold={args.threshold})")
 
 
 if __name__ == "__main__":
