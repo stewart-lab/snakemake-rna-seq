@@ -1,0 +1,9 @@
+name: rseqc
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - rseqc=5.0.4
+  - ucsc-gtftogenepred=482
+  - ucsc-genepredtobed=482

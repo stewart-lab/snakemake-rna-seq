@@ -17,6 +17,7 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 | 0 | `000_dag` | graphviz | PNG visualization of the DAG |
 | 1 | `001_fastp_trimmed` | fastp | Adapter/quality trimming + polyX removal |
 | 2 | `002_fastqc` | FastQC | QC of the trimmed reads |
+| – | `strandedness` | RSeQC | Infer per-sample library strandedness (subsample STAR align → `infer_experiment.py`); feeds RSEM + Picard |
 | – | `<genome_dir>/star_reference` | RSEM + STAR | Build the alignment/quantification index |
 | – | `<genome_dir>/picard_reference` | Picard | Build the sequence dictionary, refFlat, and rRNA intervals |
 | 3 | `003_rsem` | RSEM + STAR | Align and quantify gene-level expression |
@@ -100,6 +101,7 @@ All inputs specified in the config YAML file (see
 | `exclude` | Path to the exclusions CSV (optional) |
 | `genome_dir` | Path to the directory containing exactly one FASTA and one GTF |
 | `filter.min_count` / `filter.min_samples` | Low-count gene filter thresholds |
+| `strandedness.subsample_reads` / `strandedness.threshold` | RSeQC strandedness inference: read pairs subsampled per sample, and the min fraction in one orientation to call the library stranded (optional; defaults `200000` / `0.8`) |
 | `cores` | Number of CPU cores for the pipeline |
 | `workflow_dir` | Path to the directory to write pipeline code (Snakefile + envs/rules/scripts) |
 | `results_dir` | Path to the directory to write output of each step |

@@ -81,6 +81,7 @@ def render_paragraph(dropped_samples_by_reason: dict, min_count: int, min_sample
     sentences = [
         _fastp(),
         _fastqc(),
+        _strandedness(),
         _alignment_reference(fasta, gtf),
         _rsem(),
         _picard(),
@@ -104,6 +105,9 @@ def _fastp():
 def _fastqc():
     return f"Read quality was assessed with FastQC (v{version('fastqc')})."
 
+def _strandedness():
+    return f"Library strandedness was inferred for each sample with RSeQC infer_experiment.py (v{version('rseqc')}) from a subsample of reads aligned to the reference, and the inferred strandedness was supplied to both RSEM and Picard."
+
 def _alignment_reference(fasta: str, gtf: str):
     fasta = os.path.basename(fasta)
     gtf = os.path.basename(gtf)
@@ -116,7 +120,7 @@ def _picard():
     return f"Post-alignment RNA-seq metrics, including ribosomal, exonic, intronic and intergenic rates and 5'-to-3' transcript coverage bias, were collected with Picard CollectRnaSeqMetrics (v{version('picard')})."
 
 def _multiqc():
-    return f"Quality-control metrics from fastp, FastQC, RSEM, and Picard were aggregated into a single report with MultiQC (v{version('multiqc')})."
+    return f"Quality-control metrics from fastp, FastQC, RSeQC, RSEM, and Picard were aggregated into a single report with MultiQC (v{version('multiqc')})."
 
 def _tximport():
     return f"Per-sample RSEM gene-level results were assembled into a count matrix with tximport (v{version('tximport')})."
@@ -175,6 +179,7 @@ def render_references():
     references = [
         "fastp: https://doi.org/10.1093/bioinformatics/bty560",
         "FastQC: Andrews S. FastQC: A Quality Control Tool for High Throughput Sequence Data. 2010. https://www.bioinformatics.babraham.ac.uk/projects/fastqc/",
+        "RSeQC: https://doi.org/10.1093/bioinformatics/bts356",
         "MultiQC: https://doi.org/10.1093/bioinformatics/btw354",
         "STAR: https://doi.org/10.1093/bioinformatics/bts635",
         "RSEM: https://doi.org/10.1186/1471-2105-12-323",
