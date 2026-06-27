@@ -174,7 +174,7 @@ rule fastp_trim:
         html=STEP_FASTP_DIR + "{sample}.fastp.html",
         json=STEP_FASTP_DIR + "{sample}.fastp.json",
     threads: 
-        CORES
+        1
     conda:
         "envs/fastp.yml"
     log:
