@@ -1,7 +1,7 @@
 [![](https://img.shields.io/appveyor/build/robertmillikin/snakemake-rnaseq/main)](https://ci.appveyor.com/project/robertmillikin/snakemake-rnaseq/history)
 [![](https://img.shields.io/docker/v/stewartlab/snakemake-rnaseq?sort=semver&color=blue)](https://hub.docker.com/r/stewartlab/snakemake-rnaseq/tags?page=1&ordering=last_updated)
 
-# snakemake-rna-seq
+# snakemake-rnaseq
 
 A [Snakemake](https://snakemake.github.io/) pipeline for bulk paired-end RNA-seq:
 from raw FASTQs to differential expression, gene-set enrichment, QC reports, and
