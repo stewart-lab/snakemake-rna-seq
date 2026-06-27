@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Example configuration for the snakemake-rna-seq pipeline.
+# Example configuration for the snakemake-rnaseq pipeline.
 # Copy this file, edit the paths/values, and pass it to the pipeline.
 # Paths may be absolute or relative to the directory the pipeline runs in.
 # ----------------------------------------------------------------------------
