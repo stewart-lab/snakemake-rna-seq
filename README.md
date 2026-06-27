@@ -14,7 +14,7 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 
 | Step | Output folder | Tool | Description |
 |------|---------------|------|-------------|
-| 0 | `000_dag` | graphviz | PNG visualization of the DAG |
+| 0 | `000_meta` | graphviz | DAG visualization (PNG) + captured tool versions |
 | 1 | `001_fastp_trimmed` | fastp | Adapter/quality trimming + polyX removal |
 | 2 | `002_fastqc` | FastQC | QC of the trimmed reads |
 | – | `<genome_dir>/star_reference` | RSEM + STAR | Build the alignment/quantification index |
@@ -32,7 +32,7 @@ differential expression → gene-set analysis (GSVA **and** GSEA) → reporting.
 | 13 | `013_deseq2_gene_symbols` | gffutils | Map gene IDs → gene names using the GTF |
 | 14 | `014_gsva` | GSVA + limma | Per-sample gene-set scores + differential enrichment |
 | 15 | `015_gsea` | fgsea | Ranked-list gene-set enrichment per contrast |
-| 16 | `016_prose` | – | Auto-generated methods paragraph + tool versions |
+| 16 | `016_prose` | – | Auto-generated methods paragraph |
 | – | `reports` | Quarto | Render any user-supplied `.qmd` reports |
 
 ## Running
@@ -101,7 +101,6 @@ All inputs specified in the config YAML file (see
 | `exclude` | Path to the exclusions CSV (optional) |
 | `genome_dir` | Path to the directory containing exactly one FASTA and one GTF |
 | `filter.min_count` / `filter.min_samples` | Low-count gene filter thresholds |
-| `strandedness.subsample_reads` / `strandedness.threshold` | RSeQC strandedness inference: read pairs subsampled per sample, and the min fraction in one orientation to call the library stranded (optional; defaults `200000` / `0.8`) |
 | `cores` | Number of CPU cores for the pipeline |
 | `workflow_dir` | Path to the directory to write pipeline code (Snakefile + envs/rules/scripts) |
 | `results_dir` | Path to the directory to write output of each step |
@@ -123,8 +122,8 @@ KO_rep1,../reads/KO_rep1_R1.fastq.gz,../reads/KO_rep1_R2.fastq.gz
 ```
 
 An optional `strandedness` column lets you set a sample's library strandedness
-explicitly; valid values are `forward`, `reverse`, and `unstranded` (`none` is
-accepted as an alias for `unstranded`). Any sample left blank — or the whole
+explicitly; valid values are `forward`, `reverse`, and `unstranded`. Any sample
+left blank — or the whole
 column omitted — has its strandedness **inferred** with RSeQC
 `infer_experiment.py` (step 3), which aligns a subsample of the reads and reads
 out the orientation. The strandedness (given or inferred) is passed to RSEM
