@@ -133,7 +133,7 @@ def get_strandedness(sample, tool: str):
     strandedness = str(samples_with_strandedness_df.loc[sample, "strandedness"])
 
     rsem_strandedness_dict = {"forward": "forward", "reverse": "reverse", "unstranded": "none"}
-    picard_strandedness_dict = {"forward": "SECOND_READ_TRANSCRIPTION_STRAND", "reverse": "FIRST_READ_TRANSCRIPTION_STRAND", "unstranded": "NONE"}
+    picard_strandedness_dict = {"forward": "FIRST_READ_TRANSCRIPTION_STRAND", "reverse": "SECOND_READ_TRANSCRIPTION_STRAND", "unstranded": "NONE"}
 
     if tool == "rsem":
         return rsem_strandedness_dict[strandedness]
