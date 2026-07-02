@@ -51,7 +51,7 @@ Snakemake will create the conda environments needed for each step in the pipelin
 
 docker run --rm \
   -v /home/myname/projects:/home/myname/projects \
-  snakemake-rnaseq:1.0.2 \
+  stewartlab/snakemake-rnaseq:1.0.2 \
   /home/myname/projects/myproject/config/config.yaml
 ```
 
